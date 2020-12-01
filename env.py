@@ -3,8 +3,8 @@ from os.path import join, dirname, abspath
 import math
 import matplotlib.pyplot as plt
 import numpy as np
-import cv2
-
+from PIL import Image
+from RRT import main
 
 from pyrep import PyRep
 import pyrep.backend.sim as sim
@@ -29,6 +29,7 @@ class PioneerEnv(object):
         self.initial_joint_positions = self.agent.get_joint_positions()
 
         self.vision_map = VisionSensor("VisionMap")
+        self.vision_map.handle_explicitly()
         self.vision_map_handle = self.vision_map.get_handle()
 
         self.goal = goal
@@ -37,11 +38,9 @@ class PioneerEnv(object):
         self.start = start
         self.rand_area = rand_area
 
-        self.vision_map.capture_rgb()
-        scene_image = cv2.cvtColor(scene_image, cv2.COLOR_BGRA2GRAY)
-
+        scene_image = self.vision_map.capture_rgb()*255
         self.Planning(scene_image, self.start, self.goal, self.rand_area)
-        
+
     def reset(self):
 
         self.pr.stop()
@@ -54,7 +53,6 @@ class PioneerEnv(object):
         self.pr.step() # Step the physics simulation
 
         scene_image = self.vision_map.capture_rgb() # numpy -> [w, h, 3]
-        scene_image = cv2.cvtColor(scene_image, cv2.COLOR_BGRA2GRAY)
         reward = 0
 
         observations = self._get_state()
@@ -76,6 +74,9 @@ class PioneerEnv(object):
 
     @staticmethod
     def Planning(Map, start, goal, rand_area):
-        Map = cv2.cvtColor(Map, cv2.COLOR_BGR2GRAY)
-        path = main(Map, start, goal, rand_area)
+        """
+        :parameter Map(ndarray): Image that planning over with
+        """
+        Map = Image.fromarray(Map.astype(np.uint8)).convert('L')
+        path = main(Map, start, goal, rand_area, show_animation=True)
         np.save("PathNodes.npy", path)

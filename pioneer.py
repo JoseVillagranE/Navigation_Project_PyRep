@@ -11,8 +11,7 @@ class Pioneer(RobotComponent):
                           "Pioneer_p3dx_rightMotor"]
 
         self.proximity_sensors = [ProximitySensor(f"ultrasonic_sensor#{i}") for i in range(16)]
-
-        self.proximity_sensors_handles = [sensor.get_handle() for sensor in self.proximity_sensor]
+        self.proximity_sensors_handles = [sensor.get_handle() for sensor in self.proximity_sensors]
 
         super().__init__(count, name, self.pio_joint, base_name)
 

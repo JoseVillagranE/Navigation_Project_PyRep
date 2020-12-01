@@ -292,9 +292,11 @@ class RRT:
 
 def main(Map, start, goal, rand_area, gx=6.0, gy=10.0, show_animation=False):
 
-    rrt = RRT(Map, start=start, goal=goal, rand_area=rand_area, max_iter=10000)
     plt.figure(figsize=((10,10)))
     plt.imshow(Map)
+    Map = np.array(Map)
+    print(Map.shape)
+    rrt = RRT(Map, start=start, goal=goal, rand_area=rand_area, max_iter=10000)
     path = rrt.planning(animation=show_animation)
 
     if path is None:
@@ -308,5 +310,5 @@ def main(Map, start, goal, rand_area, gx=6.0, gy=10.0, show_animation=False):
             plt.pause(0.01)  # Need for Mac
             plt.show()
 
-    plt.savefig("rrt_planning_map.png")
+    plt.savefig("images/rrt_planning_map.png")
     return np.array(path)
