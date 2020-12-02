@@ -23,7 +23,8 @@ def main(args):
         state = env.reset()
         for i in range(args.episode_length):
             action = env.agent.predict(state)
-            reward, next_state = env.step(action)
+            next_state, reward, _, done = env.step(action)
+
             state = next_state
 
 

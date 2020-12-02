@@ -290,17 +290,17 @@ class RRT:
 
         return answer
 
-def main(Map, start, goal, rand_area, gx=6.0, gy=10.0, show_animation=False):
+def main(Map, start, goal, rand_area, path_resolution=5.0, gx=6.0, gy=10.0, show_animation=False):
 
     plt.figure(figsize=((10,10)))
     plt.imshow(Map)
     Map = np.array(Map)
-    print(Map.shape)
-    rrt = RRT(Map, start=start, goal=goal, rand_area=rand_area, max_iter=10000)
+    rrt = RRT(Map, start=start, goal=goal, rand_area=rand_area, path_resolution=5.0, max_iter=10000)
     path = rrt.planning(animation=show_animation)
 
     if path is None:
         print("Cannot find path")
+        return None
     else:
         print("found path!!")
         # Draw final path
@@ -308,7 +308,11 @@ def main(Map, start, goal, rand_area, gx=6.0, gy=10.0, show_animation=False):
             rrt.draw_graph()
             plt.plot([x for (x, y) in path], [y for (x, y) in path], linestyle='--', marker='o', color='r')
             plt.pause(0.01)  # Need for Mac
+            plt.savefig("images/rrt_planning_map.png")
             plt.show()
+            return np.array(path)
 
+    plt.plot([x for (x, y) in path], [y for (x, y) in path], linestyle='--', marker='o', color='r')
     plt.savefig("images/rrt_planning_map.png")
+    plt.show()
     return np.array(path)

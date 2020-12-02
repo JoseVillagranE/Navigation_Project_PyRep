@@ -1,5 +1,5 @@
 import os
-from os.path import join, dirname, abspath
+from os.path import join, dirname, abspath, exists
 import math
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,8 +14,8 @@ from pioneer import Pioneer
 
 class PioneerEnv(object):
 
-    def __init__(self, start=[150, 150], goal=[200, 400], rand_area=[100, 450],
-                margin=0.3, margin_to_goal=0.5, headless=False):
+    def __init__(self, start=[161, 361], goal=[208, 102], rand_area=[100, 450],
+                path_resolution=5.0, margin=0.3, margin_to_goal=0.5, headless=False):
 
         SCENE_FILE = join(dirname(abspath(__file__)),
                           'proximity_sensor.ttt')
@@ -39,12 +39,27 @@ class PioneerEnv(object):
         self.rand_area = rand_area
 
         scene_image = self.vision_map.capture_rgb()*255
-        self.Planning(scene_image, self.start, self.goal, self.rand_area)
+
+        path = None
+        if exists("./paths/PathNodes.npy"):
+            path = np.load("paths/PathNodes.npy")
+        else:
+            path = self.Planning(scene_image,
+                          self.start,
+                          self.goal,
+                          self.rand_area,
+                          path_resolution=path_resolution)
+
+        assert path is not None, "path should not be a Nonetype"
+
+        self.path = path[1:] # pull out the initial node
+        self.agent.load_path(path)
 
     def reset(self):
 
         self.pr.stop()
         self.pr.start()
+        return self._get_state()
 
     def step(self, action):
 
@@ -52,7 +67,7 @@ class PioneerEnv(object):
         self.agent.set_joint_target_velocities(action)
         self.pr.step() # Step the physics simulation
 
-        scene_image = self.vision_map.capture_rgb() # numpy -> [w, h, 3]
+        scene_image = self.vision_map.capture_rgb()*255 # numpy -> [w, h, 3]
         reward = 0
 
         observations = self._get_state()
@@ -73,10 +88,11 @@ class PioneerEnv(object):
         self.pr.shutdown()
 
     @staticmethod
-    def Planning(Map, start, goal, rand_area):
+    def Planning(Map, start, goal, rand_area, path_resolution=5.0):
         """
         :parameter Map(ndarray): Image that planning over with
         """
         Map = Image.fromarray(Map.astype(np.uint8)).convert('L')
-        path = main(Map, start, goal, rand_area, show_animation=True)
+        path = main(Map, start, goal, rand_area, path_resolution=path_resolution, show_animation=False)
         np.save("PathNodes.npy", path)
+        return path

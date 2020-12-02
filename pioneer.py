@@ -17,5 +17,14 @@ class Pioneer(RobotComponent):
 
         self.max_vel = 20 # Tune !!
 
-    def predict(self, state):
+    def predict(self, state, type_planning="straight"):
+
+        if type_planning == "straight":
+
+            
+
+
         return [self.max_vel, self.max_vel]
+
+    def load_path(path):
+        self.path = path
