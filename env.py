@@ -10,11 +10,13 @@ from pyrep import PyRep
 import pyrep.backend.sim as sim
 from pyrep.objects.shape import Shape
 from pyrep.objects.vision_sensor import VisionSensor
+from pyrep.objects.dummy import Dummy
+from pyrep.objects.shape import Shape
 from pioneer import Pioneer
 
 class PioneerEnv(object):
 
-    def __init__(self, start=[161, 361], goal=[208, 102], rand_area=[100, 450],
+    def __init__(self, start=[100, 100], goal=[180, 500], rand_area=[100, 450],
                 path_resolution=5.0, margin=0.3, margin_to_goal=0.5, headless=False):
 
         SCENE_FILE = join(dirname(abspath(__file__)),
@@ -27,38 +29,70 @@ class PioneerEnv(object):
         self.agent = Pioneer("Pioneer_p3dx")
         self.agent.set_control_loop_enabled(False)
         self.initial_joint_positions = self.agent.get_joint_positions()
+        self.initial_position = self.agent.get_position()
+        print(f"Agent initial position: {self.initial_position}")
 
         self.vision_map = VisionSensor("VisionMap")
         self.vision_map.handle_explicitly()
         self.vision_map_handle = self.vision_map.get_handle()
 
-        self.goal = goal
+        self.floor = Shape("Floor_respondable")
+
+        self.perspective_angle = self.vision_map.get_perspective_angle # degrees
+        self.resolution = self.vision_map.get_resolution # list [resx, resy]
         self.margin = margin
         self.margin_to_goal = margin_to_goal
-        self.start = start
         self.rand_area = rand_area
-
+        self.start = start
+        self.goal = goal
         scene_image = self.vision_map.capture_rgb()*255
+        scene_image = np.flipud(scene_image)
 
-        path = None
+        self.image_path = None
         if exists("./paths/PathNodes.npy"):
-            path = np.load("paths/PathNodes.npy")
+            print("Load Path..")
+            self.image_path = np.load("./paths/PathNodes.npy", allow_pickle=True)
         else:
-            path = self.Planning(scene_image,
+            print("Planning...")
+            self.image_path = self.Planning(scene_image,
                           self.start,
                           self.goal,
                           self.rand_area,
                           path_resolution=path_resolution)
 
-        assert path is not None, "path should not be a Nonetype"
+        assert self.image_path is not None, "path should not be a Nonetype"
 
-        self.path = path[1:] # pull out the initial node
-        self.agent.load_path(path)
+        self.start_position = Dummy("Start").get_position()
+        self.goal_position = Dummy("Goal").get_position() # [x, y, z]
+        print(f"Goal position: {self.goal_position}")
+
+        self.real_path = self.path_image2real(self.image_path,
+                                        self.start_position)
+
+        print(self.real_path)
+        # project in coppelia sim
+        sim_drawing_points = 0
+        point_size = 10 #[pix]
+        duplicate_tolerance = 0
+        parent_obj_handle = self.floor.get_handle()
+        max_iter_count = 999999
+        point_container = sim.simAddDrawingObject(sim_drawing_points,
+                                                 point_size,
+                                                 duplicate_tolerance,
+                                                 parent_obj_handle,
+                                                 max_iter_count)
+
+        for point in self.real_path:
+            point_data = (point[0], point[1], 0, 1, 1, 1)
+            sim.simAddDrawingObjectItem(point_container, point_data)
+        # You need to get the real coord in the real world
+        self.agent.load_path(self.real_path)
 
     def reset(self):
 
         self.pr.stop()
         self.pr.start()
+        self.pr.step()
         return self._get_state()
 
     def step(self, action):
@@ -94,5 +128,31 @@ class PioneerEnv(object):
         """
         Map = Image.fromarray(Map.astype(np.uint8)).convert('L')
         path = main(Map, start, goal, rand_area, path_resolution=path_resolution, show_animation=False)
-        np.save("PathNodes.npy", path)
+        if path is not None:
+            np.save("./paths/PathNodes.npy", path)
+            return path
+        else:
+            return None
+
+    @staticmethod
+    def path_image2real(image_path, start):
+        """
+        image_path: np.array[pix] points of the image path
+        start_array: np.array
+        """
+        scale = 13.0/512 # [m/pix]
+
+        x_init = start[0]
+        y_init = start[1]
+        deltas = [(image_path[i+1][0] - image_path[i][0], image_path[i+1][1] - image_path[i][1]) for i in range(image_path.shape[0] - 1)]
+
+        path = np.zeros((image_path.shape[0], 3))
+        path[0, :] = np.array([x_init, y_init, 0])
+        for i in range(1, image_path.shape[0]):
+            path[i, :] = np.array([path[i-1, 0] + deltas[i-1][0]*scale, path[i-1, 1] - deltas[i-1][1]*scale, 0])
+
+        rot_mat = np.diagflat([-1, -1, 1])
+        tras_mat = np.zeros_like(path)
+        tras_mat[:, 1] = np.ones_like(path.shape[0])*4.65
+        path = path @ rot_mat + tras_mat
         return path

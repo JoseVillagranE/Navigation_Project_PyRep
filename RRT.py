@@ -295,7 +295,7 @@ def main(Map, start, goal, rand_area, path_resolution=5.0, gx=6.0, gy=10.0, show
     plt.figure(figsize=((10,10)))
     plt.imshow(Map)
     Map = np.array(Map)
-    rrt = RRT(Map, start=start, goal=goal, rand_area=rand_area, path_resolution=5.0, max_iter=10000)
+    rrt = RRT(Map, start=start, goal=goal, rand_area=rand_area, path_resolution=5.0, max_iter=100000)
     path = rrt.planning(animation=show_animation)
 
     if path is None:
