@@ -68,22 +68,22 @@ class PioneerEnv(object):
 
         self.real_path = self.path_image2real(self.image_path,
                                         self.start_position)
-
-        print(self.real_path)
         # project in coppelia sim
         sim_drawing_points = 0
         point_size = 10 #[pix]
         duplicate_tolerance = 0
         parent_obj_handle = self.floor.get_handle()
         max_iter_count = 999999
+        ambient_diffuse = (255, 0, 0)
         point_container = sim.simAddDrawingObject(sim_drawing_points,
                                                  point_size,
                                                  duplicate_tolerance,
                                                  parent_obj_handle,
-                                                 max_iter_count)
+                                                 max_iter_count,
+                                                 ambient_diffuse=ambient_diffuse)
 
         for point in self.real_path:
-            point_data = (point[0], point[1], 0, 1, 1, 1)
+            point_data = (point[0], point[1], 0)
             sim.simAddDrawingObjectItem(point_container, point_data)
         # You need to get the real coord in the real world
         self.agent.load_path(self.real_path)
@@ -91,6 +91,7 @@ class PioneerEnv(object):
     def reset(self):
 
         self.pr.stop()
+        self.agent.reset()
         self.pr.start()
         self.pr.step()
         return self._get_state()

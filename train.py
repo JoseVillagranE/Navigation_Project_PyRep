@@ -24,9 +24,8 @@ def main(args):
         for i in range(args.episode_length):
             action = env.agent.predict(state)
             next_state, reward, _, done = env.step(action)
+            env.agent.update_local_goal()
             state = next_state
-
-
     env.shutdown()
     print("Done!!")
 
