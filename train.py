@@ -10,7 +10,7 @@ def argparser():
 
     parser = argparse.ArgumentParser("Navigation_project")
     parser.add_argument('--seed', help='Seed that configure torch and numpy', default=123, type=int)
-    parser.add_argument('--episodes', help='Episode of simulatoin', default=5, type=int)
+    parser.add_argument('--episodes', help='Episode of simulatoin', default=10, type=int)
     parser.add_argument('--episode_length', help='caca', default=10000, type=int)
 
     return parser.parse_args()
@@ -20,12 +20,19 @@ def main(args):
     env = PioneerEnv()
     for e in range(args.episodes):
         print('Starting episode %d' % e)
+        total_reward_episode = 0
         state = env.reset()
         for i in range(args.episode_length):
             action = env.agent.predict(state)
             next_state, reward, _, done = env.step(action)
             env.agent.update_local_goal()
             state = next_state
+            total_reward_episode += reward
+            if done:
+                break
+        print(f"Reward episode: {total_reward_episode}")
+
+
     env.shutdown()
     print("Done!!")
 

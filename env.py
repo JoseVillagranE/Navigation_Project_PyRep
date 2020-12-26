@@ -17,7 +17,7 @@ from pioneer import Pioneer
 class PioneerEnv(object):
 
     def __init__(self, start=[100, 100], goal=[180, 500], rand_area=[100, 450],
-                path_resolution=5.0, margin=0.3, margin_to_goal=0.5, headless=False):
+                path_resolution=5.0, margin=0.1, margin_to_goal=0.5, headless=False):
 
         SCENE_FILE = join(dirname(abspath(__file__)),
                           'proximity_sensor.ttt')
@@ -64,7 +64,6 @@ class PioneerEnv(object):
 
         self.start_position = Dummy("Start").get_position()
         self.goal_position = Dummy("Goal").get_position() # [x, y, z]
-        print(f"Goal position: {self.goal_position}")
 
         self.real_path = self.path_image2real(self.image_path,
                                         self.start_position)
@@ -75,6 +74,7 @@ class PioneerEnv(object):
         parent_obj_handle = self.floor.get_handle()
         max_iter_count = 999999
         ambient_diffuse = (255, 0, 0)
+        blue_ambient_diffuse = (0, 0, 255)
         point_container = sim.simAddDrawingObject(sim_drawing_points,
                                                  point_size,
                                                  duplicate_tolerance,
@@ -82,10 +82,21 @@ class PioneerEnv(object):
                                                  max_iter_count,
                                                  ambient_diffuse=ambient_diffuse)
 
+        local_point_container = sim.simAddDrawingObject(sim_drawing_points,
+                                                        point_size,
+                                                        duplicate_tolerance,
+                                                        parent_obj_handle,
+                                                        max_iter_count,
+                                                        ambient_diffuse=blue_ambient_diffuse)
+
+        # debug
         for point in self.real_path:
             point_data = (point[0], point[1], 0)
             sim.simAddDrawingObjectItem(point_container, point_data)
         # You need to get the real coord in the real world
+
+        assert local_point_container is not None, "point container shouldn't be empty"
+        self.agent.load_point_container(local_point_container)
         self.agent.load_path(self.real_path)
 
     def reset(self):
@@ -107,11 +118,12 @@ class PioneerEnv(object):
 
         observations = self._get_state()
         done = False
-        if (observations < self.margin).any():
+        # collision check
+        if observations[observations > 0].min() < self.margin:
             done = True
-        elif np.linalg.norm(self.agent.get_position[:2] - self.goal) < self.margin_to_goal:
+        # goal achievement
+        elif np.linalg.norm(self.agent.get_position()[:2] - self.goal) < self.margin_to_goal:
             done = True
-
         return observations, reward, scene_image, done
 
     def _get_state(self):
@@ -156,4 +168,4 @@ class PioneerEnv(object):
         tras_mat = np.zeros_like(path)
         tras_mat[:, 1] = np.ones_like(path.shape[0])*4.65
         path = path @ rot_mat + tras_mat
-        return path
+        return np.flip(path, axis=0)
