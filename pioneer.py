@@ -8,12 +8,14 @@ from pyrep.objects.shape import Shape
 from pyrep.backend import sim
 
 from PID import PID
-# from model import NavigationModel
-
-
+from utils import get_distance, world_to_robot_frame
+from DDPG import DDPG
 
 class Pioneer(RobotComponent):
-    def __init__(self, name: str, count: int = 0, base_name: str = None):
+    def __init__(self, name: str,
+                 count: int = 0,
+                 base_name: str = None,
+                 type_planning: str = "PID"):
 
         self.pio_joint = ["Pioneer_p3dx_leftMotor",
                           "Pioneer_p3dx_rightMotor"]
@@ -25,7 +27,9 @@ class Pioneer(RobotComponent):
 
         self.max_vel = 15 # Tune !!
         self.speed = 0.5
-        self.margin_position = 0.1 # [m]
+        self.margin_position = 0.2 # [m]
+        self.type_planning = type_planning
+
         # self.model = NavigationModel
         self.global_goal = Dummy("Goal")
         self.local_goal = Dummy("Local_goal")
@@ -38,17 +42,29 @@ class Pioneer(RobotComponent):
         self.wait_reach_local_goal = False
         self.local_point_container = None
 
-        self.dist_controller = PID(kp=0.5, ki=0, kd=0)
-        self.ang_controller = PID(kp=0.5, ki=0, kd=0)
+        if self.type_planning == "PID":
+            self.dist_controller = PID(kp=0.2, ki=0, kd=0)
+            self.ang_controller = PID(kp=0.2, ki=0, kd=0)
+        elif self.type_planning == "nn":
+            self.trainer = DDPG()
+        else:
+            NotImplementedError()
 
-    def predict(self, state, type_planning="straight"):
+    def predict(self, state):
         action = [0, 0]
-        if type_planning=="straight":
-            theta = self.get_orientation()#relative_to=self.local_goal) # [x, y, z] in radians -> [-pi pi]
-            orientation = self.get_local_orientation(theta)
-            distance = self.get_distance()
+        q_value = 0
+        if self.type_planning=="straight":
+            # orientation w/r to world frame
+            theta = self.get_orientation()[-1]# [x, y, z] -> z in radians -> [-pi pi]
+            point_t = self.local_goal_to_robot_frame(theta)
+            distance = self.get_distance(point_t, np.array([0, 0]))
+            orientation = np.arctan2(point_t[1], point_t[0])
             action = self.take_action(orientation, distance)
-        return action
+
+        elif self.type_planning=="nn":
+            action = self.actor(state)
+            q_value = self.critic(state, action)
+        return action, q_value
 
 
     def take_action(self, orientation, distance):
@@ -57,21 +73,9 @@ class Pioneer(RobotComponent):
         vr, vl = self.robot_model(v_sp, om_sp)
         return [vl, vr]
 
-
-        # angle_over_z = orientation # rad
-        # if angle_over_z > 0 and not self.wait_reach_local_goal:
-        #     return self.rotate_left()
-        # elif angle_over_z < 0 and not self.wait_reach_local_goal:
-        #     return self.rotate_right()
-        # else:
-        #     self.wait_reach_local_goal = True
-        #     return self.move_forward()
-
     def robot_model(self, v_sp, om_sp):
-        v_r = v_sp + self.d*om_sp
-        v_l = v_sp - self.d*om_sp
-        om_r = v_r/self.r_w
-        om_l = v_l/self.r_w
+        om_r = (v_sp + self.d*om_sp)/self.r_w
+        om_l = (v_sp - self.d*om_sp)/self.r_w
         return om_r, om_l
 
     def move_forward(self):
@@ -90,20 +94,14 @@ class Pioneer(RobotComponent):
         self.local_goal_idx = 0
         self.local_goal.set_position(self.path[0])
 
-    def get_distance(self):
-        return np.linalg.norm(self.get_position()[:-1] - self.local_goal.get_position()[:-1])
-
-    def get_local_orientation(self, theta):
-        T = np.array([[np.cos(theta), -1*np.sin(theta)], [np.sin(theta), np.cos(theta)]])
-        trans = self.local_goal.get_position() - self.get_position()
-        point_t = np.dot(T, trans)
-        orientation = np.arctan2(point_t[1], point_t[0])
-        return orientation
+    def local_goal_to_robot_frame(self, theta):
+        return world_to_robot_frame(self.get_position(), self.local_goal.get_position(), theta)
 
     def update_local_goal(self, debug=True):
-        if self.margin_position > np.linalg.norm(self.get_position() - self.local_goal.get_position()) and \
-             self.local_goal.get_position() != self.global_goal.get_position():
+        if self.margin_position > np.linalg.norm(self.get_position()[:-1] - self.local_goal.get_position()[:-1]):
             self.local_goal_idx += 1
+            if self.local_goal_idx == self.path.shape[0]:
+                return
             self.local_goal.set_position(self.path[self.local_goal_idx])
             if debug:
                 self.draw_local_goal()

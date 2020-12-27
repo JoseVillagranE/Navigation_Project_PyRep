@@ -2,6 +2,7 @@ import math
 import matplotlib.pyplot as plt
 import random
 import numpy as np
+import os
 
 class RRT:
 
@@ -15,7 +16,7 @@ class RRT:
                 self.parent = None
 
     def __init__(self, Map, start, goal, rand_area,
-                 expand_dis=30.0, path_resolution=5.0, goal_sample_rate=5, max_iter=500):
+                 expand_dis=30.0, path_resolution=5.0, goal_sample_rate=5, max_iter=500, logger=None):
         """
         Setting Parameter
         Map: Gray Imagen
@@ -33,6 +34,7 @@ class RRT:
         self.goal_sample_rate = goal_sample_rate
         self.max_iter = max_iter
         self.node_list = []
+        self.logger = logger
 
     def planning(self, animation=True):
         """
@@ -42,8 +44,6 @@ class RRT:
 
         self.node_list = [self.start]
         for i in range(self.max_iter):
-
-            print("Iteracion: " + str(i))
             rnd_node = self.get_random_node()
             nearest_ind = self.get_nearest_node_index(self.node_list, rnd_node)
             nearest_node = self.node_list[nearest_ind]
@@ -52,8 +52,6 @@ class RRT:
 
             if self.check_collision(new_node, self.Map):
                 self.node_list.append(new_node)
-            else:
-                print("Colision!")
 
             if animation and i % 5 == 0:
                 self.draw_graph(rnd_node)
@@ -61,6 +59,9 @@ class RRT:
             if self.calc_dist_to_goal(self.node_list[-1].x, self.node_list[-1].y) <= self.expand_dis:
                 final_node = self.steer(self.node_list[-1], self.end, self.expand_dis)
                 if self.check_collision(final_node, self.Map):
+                    print(f"RRT end with: {i+1} iterations")
+                    if self.logger is not None:
+                        self.logger.info(f"Iteration: {i+1}/{self.max_iter}")
                     return self.generate_final_course(len(self.node_list) - 1)
 
             if animation and i % 5:
@@ -290,17 +291,18 @@ class RRT:
 
         return answer
 
-def main(Map, start, goal, rand_area, path_resolution=5.0, gx=6.0, gy=10.0, show_animation=False):
+def main(Map, start, goal, rand_area, path_resolution=5.0, gx=6.0, gy=10.0, logger=None, show_animation=False):
 
     plt.figure(figsize=((10,10)))
     plt.imshow(Map)
     Map = np.array(Map)
-    rrt = RRT(Map, start=start, goal=goal, rand_area=rand_area, path_resolution=5.0, max_iter=100000)
+    rrt = RRT(Map, start=start, goal=goal, rand_area=rand_area, path_resolution=5.0, max_iter=100000, logger=logger)
     path = rrt.planning(animation=show_animation)
 
+    n_paths = len(os.listdir("images/")) # already created
     if path is None:
         print("Cannot find path")
-        return None
+        return None, None
     else:
         print("found path!!")
         # Draw final path
@@ -308,11 +310,11 @@ def main(Map, start, goal, rand_area, path_resolution=5.0, gx=6.0, gy=10.0, show
             rrt.draw_graph()
             plt.plot([x for (x, y) in path], [y for (x, y) in path], linestyle='--', marker='o', color='r')
             plt.pause(0.01)  # Need for Mac
-            plt.savefig("images/rrt_planning_map.png")
+            plt.savefig("images/rrt_planning_map_" + str(n_paths)+ ".png")
             plt.show()
             return np.array(path)
 
     plt.plot([x for (x, y) in path], [y for (x, y) in path], linestyle='--', marker='o', color='r')
-    plt.savefig("images/rrt_planning_map.png")
+    plt.savefig("images/rrt_planning_map_" + str(n_paths)+ ".png")
     plt.show()
-    return np.array(path)
+    return np.array(path), n_paths

@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
 from RRT import main
+from logger import get_logger
 
 from pyrep import PyRep
 import pyrep.backend.sim as sim
@@ -13,11 +14,19 @@ from pyrep.objects.vision_sensor import VisionSensor
 from pyrep.objects.dummy import Dummy
 from pyrep.objects.shape import Shape
 from pioneer import Pioneer
+from utils import get_distance, world_to_robot_frame
 
 class PioneerEnv(object):
 
-    def __init__(self, start=[100, 100], goal=[180, 500], rand_area=[100, 450],
-                path_resolution=5.0, margin=0.1, margin_to_goal=0.5, headless=False):
+    def __init__(self, start=[100, 100],
+                 goal=[180, 500],
+                 rand_area=[100, 450],
+                 path_resolution=5.0,
+                 margin=0.3,
+                 margin_to_goal=0.5,
+                 _load_path=False,
+                 path_name="PathNodes",
+                 headless=False):
 
         SCENE_FILE = join(dirname(abspath(__file__)),
                           'proximity_sensor.ttt')
@@ -48,17 +57,19 @@ class PioneerEnv(object):
         scene_image = self.vision_map.capture_rgb()*255
         scene_image = np.flipud(scene_image)
 
+        self.planning_info_logger = get_logger("./loggers", "Planning_Info.log")
         self.image_path = None
-        if exists("./paths/PathNodes.npy"):
+        if exists("./paths/"+ path_name + ".npy") and _load_path:
             print("Load Path..")
-            self.image_path = np.load("./paths/PathNodes.npy", allow_pickle=True)
+            self.image_path = np.load("./paths/"+path_name+".npy", allow_pickle=True)
         else:
             print("Planning...")
             self.image_path = self.Planning(scene_image,
                           self.start,
                           self.goal,
                           self.rand_area,
-                          path_resolution=path_resolution)
+                          path_resolution=path_resolution,
+                          logger=self.planning_info_logger)
 
         assert self.image_path is not None, "path should not be a Nonetype"
 
@@ -119,32 +130,54 @@ class PioneerEnv(object):
         observations = self._get_state()
         done = False
         # collision check
-        if observations[observations > 0].min() < self.margin:
+        if self.collision_check(observations, self.margin):
             done = True
         # goal achievement
-        elif np.linalg.norm(self.agent.get_position()[:2] - self.goal) < self.margin_to_goal:
+        elif self.goal_checking(self.agent.get_position(), self.goal_position, self.margin_to_goal):
             done = True
         return observations, reward, scene_image, done
 
     def _get_state(self):
-        state = [proxy_sensor.read() for proxy_sensor in self.agent.proximity_sensors] # list of distances. -1 if not detect anything
-        return np.array(state)
+        sensor_state = np.array([proxy_sensor.read() for proxy_sensor in self.agent.proximity_sensors]) # list of distances. -1 if not detect anything
+        goal_transformed = world_to_robot_frame(self.agent.get_position(), self.goal_position, self.agent.get_orientation())
+        distance_to_goal = np.array(get_distance(goal_transformed, np.array([0,0]))) # robot frame
+        orientation_to_goal = np.array(np.arctan2(goal_transformed[1], goal_transformed[0]))
+        return np.concatenate((sensor_state, distance_to_goal, orientation_to_goal))
 
     def shutdown(self):
         self.pr.stop()
         self.pr.shutdown()
 
+
     @staticmethod
-    def Planning(Map, start, goal, rand_area, path_resolution=5.0):
+    def collision_check(observations, margin):
+        if observations.sum() == -1*observations.shape[0]:
+            return False
+        elif observations[observations > 0].min() < margin:
+            return True
+        else:
+            return False
+
+    @staticmethod
+    def goal_checking(agent_position, goal, margin):
+        return np.linalg.norm(agent_position[:-1] - goal[:-1]) < margin
+
+    @staticmethod
+    def Planning(Map, start, goal, rand_area, path_resolution=5.0, logger=None):
         """
         :parameter Map(ndarray): Image that planning over with
         """
         Map = Image.fromarray(Map.astype(np.uint8)).convert('L')
-        path = main(Map, start, goal, rand_area, path_resolution=path_resolution, show_animation=False)
+        path, n_paths = main(Map, start, goal, rand_area,
+                             path_resolution=path_resolution,
+                             logger=logger,
+                             show_animation=False)
+
         if path is not None:
-            np.save("./paths/PathNodes.npy", path)
+            np.save("./paths/PathNodes_" + str(n_paths) +".npy", path)
             return path
         else:
+            logger.info("Not found Path")
             return None
 
     @staticmethod
@@ -166,6 +199,7 @@ class PioneerEnv(object):
 
         rot_mat = np.diagflat([-1, -1, 1])
         tras_mat = np.zeros_like(path)
+        tras_mat[:, 0] = np.ones_like(path.shape[0])*0.3
         tras_mat[:, 1] = np.ones_like(path.shape[0])*4.65
         path = path @ rot_mat + tras_mat
         return np.flip(path, axis=0)
