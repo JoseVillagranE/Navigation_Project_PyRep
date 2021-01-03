@@ -15,7 +15,7 @@ class Pioneer(RobotComponent):
     def __init__(self, name: str,
                  count: int = 0,
                  base_name: str = None,
-                 type_planning: str = "PID"):
+                 type_of_planning: str = "PID"):
 
         self.pio_joint = ["Pioneer_p3dx_leftMotor",
                           "Pioneer_p3dx_rightMotor"]
@@ -26,9 +26,8 @@ class Pioneer(RobotComponent):
         super().__init__(count, name, self.pio_joint, base_name)
 
         self.max_vel = 15 # Tune !!
-        self.speed = 0.5
         self.margin_position = 0.2 # [m]
-        self.type_planning = type_planning
+        self.type_of_planning = type_of_planning
 
         # self.model = NavigationModel
         self.global_goal = Dummy("Goal")
@@ -39,58 +38,41 @@ class Pioneer(RobotComponent):
         print(f"Wheel axis radius: {self.d}")
         print(f"Wheel radius: {self.r_w}")
 
-        self.wait_reach_local_goal = False
-        self.local_point_container = None
-
-        if self.type_planning == "PID":
+        if self.type_of_planning == "PID":
             self.dist_controller = PID(kp=0.2, ki=0, kd=0)
             self.ang_controller = PID(kp=0.2, ki=0, kd=0)
-        elif self.type_planning == "nn":
-            self.trainer = DDPG()
+        elif self.type_of_planning == "nn":
+            self.trainer = DDPG(len(self.proximity_sensors)+1+1)
         else:
             NotImplementedError()
 
-    def predict(self, state):
+
+    def predict(self, state, i):
         action = [0, 0]
-        q_value = 0
-        if self.type_planning=="straight":
+        if self.type_of_planning=="PID":
             # orientation w/r to world frame
             theta = self.get_orientation()[-1]# [x, y, z] -> z in radians -> [-pi pi]
             point_t = self.local_goal_to_robot_frame(theta)
-            distance = self.get_distance(point_t, np.array([0, 0]))
+            distance = get_distance(point_t, np.array([0, 0]))
             orientation = np.arctan2(point_t[1], point_t[0])
             action = self.take_action(orientation, distance)
-
-        elif self.type_planning=="nn":
-            action = self.actor(state)
-            q_value = self.critic(state, action)
-        return action, q_value
+        elif self.type_of_planning=="nn":
+            action = self.trainer.get_action(state, i)
+        return action
 
 
     def take_action(self, orientation, distance):
         v_sp = self.dist_controller.control(distance)
         om_sp = self.ang_controller.control(orientation)
-        vr, vl = self.robot_model(v_sp, om_sp)
-        return [vl, vr]
+        wr, wl = self.robot_model(v_sp, om_sp)
+        return [wl, wr]
 
     def robot_model(self, v_sp, om_sp):
         om_r = (v_sp + self.d*om_sp)/self.r_w
         om_l = (v_sp - self.d*om_sp)/self.r_w
         return om_r, om_l
 
-    def move_forward(self):
-        return [self.speed, self.speed]
-
-    def rotate_right(self):
-        return [self.speed, -self.speed]
-
-    def rotate_left(self):
-        return [-self.speed, self.speed]
-
-    def move_backward(self):
-        return [-self.speed, -self.speed]
-
-    def reset(self):
+    def local_goal_reset(self):
         self.local_goal_idx = 0
         self.local_goal.set_position(self.path[0])
 
@@ -105,7 +87,6 @@ class Pioneer(RobotComponent):
             self.local_goal.set_position(self.path[self.local_goal_idx])
             if debug:
                 self.draw_local_goal()
-            self.action_forward_wait = False
 
     def load_path(self, path, debug=True):
         self.path = path[1:]
