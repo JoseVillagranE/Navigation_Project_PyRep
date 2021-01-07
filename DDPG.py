@@ -9,8 +9,8 @@ class DDPG:
 
     def __init__(self,
                  state_dim,
-                 action_max=1200,
-                 action_min=0,
+                 action_max=[.5, 1.],
+                 action_min=[0., 0.],
                  actor_lr=1e-4,
                  critic_lr=1e-3,
                  batch_size=256,
@@ -24,8 +24,8 @@ class DDPG:
         self.tau = tau
         self.max_memory_size = max_memory_size
         self.batch_size = batch_size
-        self.action_max = action_max
-        self.action_min = action_min
+        self.action_max = np.array(action_max)
+        self.action_min = np.array(action_min)
         self.iteration_limit = iteration_limit
 
         # GPU

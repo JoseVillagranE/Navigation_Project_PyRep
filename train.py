@@ -30,13 +30,11 @@ def main(args):
     for e in range(args.episodes):
         print('Starting episode %d' % e)
         total_reward_episode = 0
-        state = env.reset()
+        state, sensor_state = env.reset()
         i = 0
-        # pos_m1 = env.agent.get_position()
-        # orientation_m1 = env.agent.get_orientation()[-1]
         for i in range(args.iterations):
-            action = env.agent.predict(state, i)
-            next_state, reward, _, done = env.step(action)
+            action = env.agent.predict(state, sensor_state, i)
+            next_state, reward, _, done, sensor_state = env.step(action)
             if args.type_of_planning=='PID':
                 env.agent.update_local_goal()
             else:
@@ -50,6 +48,7 @@ def main(args):
         print(f"iteration: {i} || episode reward: {total_reward_episode}")
         if args.type_of_planning=='nn':
             # training
+            print("training...")
             env.model_update()
     env.shutdown()
     print("Done!!")
