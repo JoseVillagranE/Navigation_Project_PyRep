@@ -17,7 +17,7 @@ class Pioneer(RobotComponent):
                  base_name: str = None,
                  type_of_planning: str = "PID",
                  use_pot_field: bool = True,
-                 Krep: float = 1.1):
+                 Krep: float = .7):
 
         self.pio_joint = ["Pioneer_p3dx_leftMotor",
                           "Pioneer_p3dx_rightMotor"]
@@ -26,7 +26,7 @@ class Pioneer(RobotComponent):
         self.proximity_sensors_handles = [sensor.get_handle() for sensor in self.proximity_sensors]
 
         super().__init__(count, name, self.pio_joint, base_name)
-        self.margin_position = 0.3 # [m]
+        self.margin_position = 0.7 # [m]
         self.type_of_planning = type_of_planning
 
         # self.model = NavigationModel
@@ -38,13 +38,9 @@ class Pioneer(RobotComponent):
         print(f"Wheel axis radius: {self.d}")
         print(f"Wheel radius: {self.r_w}")
 
-        if self.type_of_planning == "PID":
-            self.dist_controller = PID(kp=0.1, ki=0, kd=0.)
-            self.ang_controller = PID(kp=0.2, ki=0., kd=0.1)
-        elif self.type_of_planning == "nn":
-            self.trainer = DDPG(len(self.proximity_sensors)+1+1)
-        else:
-            NotImplementedError()
+        self.dist_controller = PID(kp=0.1, ki=0, kd=0.)
+        self.ang_controller = PID(kp=0.3, ki=0., kd=10)
+        self.trainer = DDPG(len(self.proximity_sensors)+1+1)
 
         self.use_pot_field = use_pot_field
         self.Krep = Krep
@@ -58,7 +54,7 @@ class Pioneer(RobotComponent):
             distance = get_distance(point_t, np.array([0, 0]))
             orientation = np.arctan2(point_t[1], point_t[0])
             try:
-                if self.use_pot_field and sensor_state[sensor_state>-1].min() < 0.15:
+                if self.use_pot_field and sensor_state[sensor_state>-1].min() < 0.3:
                     pf_or = self.get_or_pf(sensor_state, orientation)
                     orientation -= pf_or
             except ValueError:
@@ -92,7 +88,7 @@ class Pioneer(RobotComponent):
     def update_local_goal(self, debug=True):
         if self.margin_position > np.linalg.norm(self.get_position()[:-1] - self.local_goal.get_position()[:-1]):
             self.local_goal_idx += 1
-            if self.local_goal_idx == self.path.shape[0]:
+            if self.local_goal_idx >= self.path.shape[0]:
                 return
             self.local_goal.set_position(self.path[self.local_goal_idx])
             if debug:
@@ -107,7 +103,7 @@ class Pioneer(RobotComponent):
         angles = angles[mask]
         F = (np.cos(angles)/states**2).sum()
         S =  (np.sin(angles)/states**2).sum()
-        Xrep = F*np.cos(orientation) - S*np.sin(orientation)
+        Xrep = -F*np.cos(orientation) + S*np.sin(orientation)
         Yrep = F*np.sin(orientation) + S*np.cos(orientation)
         Px = -Xrep
         Py = -Yrep
@@ -126,6 +122,9 @@ class Pioneer(RobotComponent):
 
     def load_point_container(self, point_container):
         self.local_point_container = point_container
+
+    def set_type_of_planning(self, type_of_planning):
+        self.type_of_planning = type_of_planning
 
 
     def draw_local_goal(self):

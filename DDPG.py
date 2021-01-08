@@ -49,14 +49,14 @@ class DDPG:
         self.replay_memory = SequentialDequeMemory(queue_capacity=self.max_memory_size)
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=actor_lr)
         self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=critic_lr)
-        self.critic_criterion = nn.MSELoss()
+        self.mse = nn.MSELoss()
 
     def get_action(self, state, i):
         state = Variable(torch.from_numpy(state).float()).to(self.device)
         if state.ndim <  2:
             state = state.unsqueeze(0)
         action = self.actor(state)
-        action = action.detach().cpu().numpy()[0] + self.gen_random_noise(self.noise_decay(self.iteration_limit, i))
+        action = action.detach().cpu().numpy()[0]# + self.gen_random_noise(self.noise_decay(self.iteration_limit, i))
         action = np.clip(action, -1, 1)
         action = (self.action_max - self.action_min)*action/2.0 + (self.action_max + self.action_min)/2.0
         return action
@@ -78,7 +78,7 @@ class DDPG:
         next_Q = self.critic_target(next_states, next_actions.detach())
 
         Q_prime = rewards.unsqueeze(1) + self.gamma*next_Q
-        critic_loss = self.critic_criterion(Qvals, Q_prime)
+        critic_loss = self.mse(Qvals, Q_prime)
 
         actor_loss = -1*self.critic(states, self.actor(states)).mean()
         # print(f"actor loss: {actor_loss}")
@@ -96,6 +96,17 @@ class DDPG:
 
         for target_param, param in zip(self.critic_target.parameters(), self.critic.parameters()):
             target_param.data.copy_(param.data*self.tau + target_param.data*(1.0 - self.tau))
+
+    def IL_update(self):
+
+        states, actions, _, _, _ = self.replay_memory.get_random_batch_for_replay(self.batch_size)
+        states = torch.from_numpy(states).to(self.device).float()
+        actions = torch.from_numpy(actions).to(self.device).float()
+        pred_actions = self.actor(states)
+        loss = self.mse(pred_actions, actions)
+        self.actor_optimizer.zero_grad()
+        loss.backward()
+        self.actor_optimizer.step()
 
     def replay_add_memory(self, experience_tuple):
         self.replay_memory.add_to_memory(experience_tuple)

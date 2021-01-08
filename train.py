@@ -35,21 +35,60 @@ def main(args):
         for i in range(args.iterations):
             action = env.agent.predict(state, sensor_state, i)
             next_state, reward, _, done, sensor_state = env.step(action)
-            if args.type_of_planning=='PID':
-                env.agent.update_local_goal()
-            else:
-                experience_tuple = (state, action, reward, next_state, done)
-                env.agent.trainer.replay_add_memory(experience_tuple)
+            experience_tuple = (state, action, reward, next_state, done)
+            env.agent.trainer.replay_add_memory(experience_tuple)
             state = next_state
             total_reward_episode += reward
             if done:
                 break
+            if args.type_of_planning=='PID':
+                env.agent.update_local_goal()
 
         print(f"iteration: {i} || episode reward: {total_reward_episode}")
         if args.type_of_planning=='nn':
             # training
             print("training...")
             env.model_update()
+    env.shutdown()
+    print("Done!!")
+
+def main_2(args):
+
+    # get experience w/ PID
+    env = PioneerEnv(_load_path=args.load_path, type_of_planning=args.type_of_planning)
+    state, sensor_state = env.reset()
+    done = False
+    total_reward_episode = 0
+    while not done:
+        action = env.agent.predict(state, sensor_state, 0)
+        next_state, reward, _, done, sensor_state = env.step(action)
+        experience_tuple = (state, action, reward, next_state, done)
+        env.agent.trainer.replay_add_memory(experience_tuple)
+        state = next_state
+        total_reward_episode += reward
+        if done:
+            break
+        env.agent.update_local_goal()
+
+    env.agent.set_type_of_planning("nn")
+    env.set_margin(0.15)
+    for _ in range(50):
+        state, sensor_state = env.reset()
+        for j in range(50):
+            env.model_update("IL")
+
+        total_reward = 0
+        done = False
+        for i in range(1000):
+            action = env.agent.predict(state, sensor_state, 0)
+            next_state, reward, _, done, sensor_state = env.step(action)
+            experience_tuple = (state, action, reward, next_state, done)
+            state = next_state
+            total_reward += reward
+            if done:
+                break
+        print(f"iteration: {i} || episode reward: {total_reward}")
+
     env.shutdown()
     print("Done!!")
 
@@ -60,4 +99,4 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     np.random.seed(seed=args.seed)
 
-    main(args)
+    main_2(args)

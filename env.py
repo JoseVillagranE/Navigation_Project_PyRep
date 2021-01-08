@@ -22,7 +22,7 @@ class PioneerEnv(object):
                  goal=[180, 500],
                  rand_area=[100, 450],
                  path_resolution=5.0,
-                 margin=0,
+                 margin=0.,
                  margin_to_goal=0.5,
                  action_max=[.5, 1.],
                  action_min=[0., 0.],
@@ -162,7 +162,6 @@ class PioneerEnv(object):
     def _get_reward(self, sensor_state, distance_to_goal, orientation_to_goal):
         done = False
         r_target = (self.c_lin_vel/self.action_max[0])*np.cos(orientation_to_goal) + 5*((distance_to_goal - self.distance_to_goal_m1) <= 0) - 6
-
         K = 1/(2*self.action_max[1]) * max(abs(2*self.c_ang_vel), abs(self.c_ang_vel - self.b_ang_vel))
         r_ang = -2*K*(K>0.5)
         s_st_aux = sensor_state[sensor_state>-1]
@@ -175,7 +174,8 @@ class PioneerEnv(object):
             reward = -1*self.rew_weights[1]
             done = True
         # goal achievement
-        if distance_to_goal < self.margin:
+        if get_distance(self.agent.get_position()[:-1], self.goal_position[:-1]) < self.margin_to_goal:
+            print("GOAL!!")
             reward = self.rew_weights[2]
             done = True
         return reward, done
@@ -184,8 +184,11 @@ class PioneerEnv(object):
         self.pr.stop()
         self.pr.shutdown()
 
-    def model_update(self):
-        self.agent.trainer.update()
+    def model_update(self, method="DDPG"):
+
+        if method=="DDPG": self.agent.trainer.update()
+        elif method=="IL": self.agent.trainer.IL_update()
+        else: raise NotImplementedError()   
 
     def normalize_states(self, sensor_state, distance_to_goal, orientation_to_goal):
         sensor_state = self.normalize_laser(sensor_state, self.norm_func)
@@ -198,6 +201,10 @@ class PioneerEnv(object):
 
     def norm_func(self, x, max_value):
         return 2*(1 - min(x, max_value)/max_value) - 1
+
+
+    def set_margin(self, margin):
+        self.margin = margin
 
     @staticmethod
     def collision_check(observations, margin):

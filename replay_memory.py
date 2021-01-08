@@ -27,7 +27,7 @@ class SequentialDequeMemory(ExperienceReplayMemory):
     def get_random_batch_for_replay(self, batch_size=64):
         batch = random.sample(self.memory, batch_size)
         states = np.zeros((batch_size, 18))
-        actions = np.zeros((batch_size, batch[0][1].shape[0]))
+        actions = np.zeros((batch_size, 2))
         rewards = np.zeros((batch_size, 1))
         next_states = np.zeros_like(states)
         dones = np.zeros((batch_size, 1))
