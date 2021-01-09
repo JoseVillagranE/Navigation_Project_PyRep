@@ -47,6 +47,7 @@ class Pioneer(RobotComponent):
 
     def predict(self, state, sensor_state, i):
         action = [0, 0]
+        action_b_rm = [0, 0]
         if self.type_of_planning=="PID":
             # orientation w/r to world frame
             theta = self.get_orientation()[-1]# [x, y, z] -> z in radians -> [-pi pi]
@@ -59,19 +60,19 @@ class Pioneer(RobotComponent):
                     orientation -= pf_or
             except ValueError:
                 pass
-            action = self.take_action(orientation, distance)
+            action, action_b_rm = self.take_action(orientation, distance)
         elif self.type_of_planning=="nn":
             action = self.trainer.get_action(state, i)
             wl, wr = self.robot_model(*action)
             action = np.array([wl, wr])
-        return action
+        return action, action_b_rm
 
 
     def take_action(self, orientation, distance):
         v_sp = self.dist_controller.control(distance)
         om_sp = self.ang_controller.control(orientation)
         wr, wl = self.robot_model(v_sp, om_sp)
-        return [wl, wr]
+        return [wl, wr], [v_sp, om_sp]
 
     def robot_model(self, v_sp, om_sp):
         om_r = (v_sp + self.d*om_sp)/self.r_w

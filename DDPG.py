@@ -100,16 +100,28 @@ class DDPG:
     def IL_update(self):
 
         states, actions, _, _, _ = self.replay_memory.get_random_batch_for_replay(self.batch_size)
-        states = torch.from_numpy(states).to(self.device).float()
-        actions = torch.from_numpy(actions).to(self.device).float()
+
+        # normalize action
+        actions = 2*(actions - self.action_min)/(self.action_max - self.action_min) - 1
+
+        states = Variable(torch.from_numpy(states).to(self.device).float())
+        actions = Variable(torch.from_numpy(actions).to(self.device).float())
         pred_actions = self.actor(states)
-        loss = self.mse(pred_actions, actions)
+
+        # pred_actions = (self.action_max - self.action_min)*pred_actions/2.0 + (self.action_max + self.action_min)/2.0
+
+        loss = self.mse(pred_actions, actions).mean()
         self.actor_optimizer.zero_grad()
         loss.backward()
         self.actor_optimizer.step()
+        return loss.item()
 
     def replay_add_memory(self, experience_tuple):
         self.replay_memory.add_to_memory(experience_tuple)
+
+    def set_max_min_action(self, action_max, action_min):
+        self.action_max = action_max
+        self.action_min = action_min
 
     @staticmethod
     def gen_random_noise(scale=1):

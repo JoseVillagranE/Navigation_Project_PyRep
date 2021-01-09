@@ -187,8 +187,8 @@ class PioneerEnv(object):
     def model_update(self, method="DDPG"):
 
         if method=="DDPG": self.agent.trainer.update()
-        elif method=="IL": self.agent.trainer.IL_update()
-        else: raise NotImplementedError()   
+        elif method=="IL": loss = self.agent.trainer.IL_update(); return loss
+        else: raise NotImplementedError()
 
     def normalize_states(self, sensor_state, distance_to_goal, orientation_to_goal):
         sensor_state = self.normalize_laser(sensor_state, self.norm_func)

@@ -59,10 +59,17 @@ def main_2(args):
     state, sensor_state = env.reset()
     done = False
     total_reward_episode = 0
+    linear_max_action = ang_max_action = 0
+    linear_min_action = ang_min_action = 500
     while not done:
-        action = env.agent.predict(state, sensor_state, 0)
+        action, action_b_rm = env.agent.predict(state, sensor_state, 0)
         next_state, reward, _, done, sensor_state = env.step(action)
-        experience_tuple = (state, action, reward, next_state, done)
+        if action_b_rm[0] > linear_max_action: linear_max_action = action_b_rm[0]
+        if action_b_rm[1] > ang_max_action: ang_max_action = action_b_rm[1]
+        if action_b_rm[0] < linear_min_action: linear_min_action = action_b_rm[0]
+        if action_b_rm[1] < ang_min_action: ang_min_action = action_b_rm[1]
+
+        experience_tuple = (state, action_b_rm, reward, next_state, done)
         env.agent.trainer.replay_add_memory(experience_tuple)
         state = next_state
         total_reward_episode += reward
@@ -70,17 +77,25 @@ def main_2(args):
             break
         env.agent.update_local_goal()
 
-    env.agent.set_type_of_planning("nn")
-    env.set_margin(0.15)
-    for _ in range(50):
-        state, sensor_state = env.reset()
-        for j in range(50):
-            env.model_update("IL")
+    print(f"max_action: [{linear_max_action}, {ang_max_action}]")
+    print(f"min_action: [{linear_min_action}, {ang_min_action}]")
 
+    env.agent.set_type_of_planning("nn")
+    env.agent.trainer.set_max_min_action(np.array([linear_max_action, ang_max_action]),
+                                        np.array([linear_min_action, ang_min_action]))
+    env.set_margin(0.15)
+    for k in range(50):
+        state, sensor_state = env.reset()
+        loss_mean = 0
+        for j in range(50):
+            loss = env.model_update("IL")
+            loss_mean += loss
+        loss_mean /= 50
+        print(f"iteration: {k} || IL_loss: {loss_mean}")
         total_reward = 0
         done = False
         for i in range(1000):
-            action = env.agent.predict(state, sensor_state, 0)
+            action, _ = env.agent.predict(state, sensor_state, 0)
             next_state, reward, _, done, sensor_state = env.step(action)
             experience_tuple = (state, action, reward, next_state, done)
             state = next_state
