@@ -7,9 +7,9 @@ class ActorNetwork(nn.Module):
     def __init__(self, state_dim):
         super().__init__()
         self.model = nn.Sequential(nn.Linear(state_dim, 256),
-                                   nn.LeakyReLU(),
+                                   nn.Tanh(),
                                    nn.Linear(256, 256),
-                                   nn.LeakyReLU(),
+                                   nn.Tanh(),
                                    nn.Linear(256, 2),
                                    nn.Tanh())
 

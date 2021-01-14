@@ -29,6 +29,7 @@ class PioneerEnv(object):
                  _load_path=True,
                  path_name="PathNodes",
                  type_of_planning="PID",
+                 type_replay_buffer = "random",
                  max_laser_range = 1.0,
                  headless=False):
 
@@ -39,7 +40,9 @@ class PioneerEnv(object):
         self.pr = PyRep()
         self.pr.launch(SCENE_FILE, headless=headless)
         self.pr.start()
-        self.agent = Pioneer("Pioneer_p3dx", type_of_planning=type_of_planning)
+        self.agent = Pioneer("Pioneer_p3dx",
+                             type_of_planning=type_of_planning,
+                             type_replay_buffer=type_replay_buffer)
         self.agent.set_control_loop_enabled(False)
         self.initial_joint_positions = self.agent.get_joint_positions()
         self.initial_position = self.agent.get_position()
@@ -135,10 +138,13 @@ class PioneerEnv(object):
         self.pr.start()
         self.pr.step()
         sensor_state, distance_to_goal, orientation_to_goal = self._get_state()
+        self.distance_to_goal_m1 = distance_to_goal
+        self.orientation_to_goal_m1 = orientation_to_goal
         sensor_state_n, distance_to_goal, orientation_to_goal = self.normalize_states(sensor_state, distance_to_goal, orientation_to_goal)
+        # pos_x, pos_y = self.agent.get_position()[:-1]
         return np.hstack((sensor_state_n, distance_to_goal, orientation_to_goal)), sensor_state
 
-    def step(self, action):
+    def step(self, action, pf_f=0):
         self.agent.set_joint_target_velocities(action)
         self.pr.step() # Step the physics simulation
         scene_image = self.vision_map.capture_rgb()*255 # numpy -> [w, h, 3]
@@ -147,35 +153,42 @@ class PioneerEnv(object):
         self.c_lin_vel, self.c_ang_vel = self.agent.get_velocity() # 3d coordinates
         self.c_lin_vel = np.linalg.norm(self.c_lin_vel)
         self.c_ang_vel = self.c_ang_vel[-1] # w/r z
-        reward, done = self._get_reward(sensor_state, distance_to_goal, orientation_to_goal)
+        reward, done = self._get_reward(sensor_state, distance_to_goal, orientation_to_goal, pf_f)
         sensor_state_n, distance_to_goal, orientation_to_goal = self.normalize_states(sensor_state, distance_to_goal, orientation_to_goal)
+        # pos_x, pos_y = self.agent.get_position()[:-1]
         state = np.hstack((sensor_state_n, distance_to_goal, orientation_to_goal))
         return state, reward, scene_image, done, sensor_state
 
     def _get_state(self):
         sensor_state = np.array([proxy_sensor.read() for proxy_sensor in self.agent.proximity_sensors]) # list of distances. -1 if not detect anything
         goal_transformed = world_to_robot_frame(self.agent.get_position(), self.goal_position, self.agent.get_orientation()[-1])
-        distance_to_goal = get_distance(goal_transformed[:-1], np.array([0,0])) # robot frame
+        # distance_to_goal = get_distance(goal_transformed[:-1], np.array([0,0])) # robot frame
+        distance_to_goal = get_distance(self.agent.get_position()[:-1], self.goal_position[:-1])
         orientation_to_goal = np.arctan2(goal_transformed[1], goal_transformed[0])
         return sensor_state, distance_to_goal, orientation_to_goal
 
-    def _get_reward(self, sensor_state, distance_to_goal, orientation_to_goal):
+    def _get_reward(self, sensor_state, distance_to_goal, orientation_to_goal, pf_f=0):
         done = False
-        r_target = (self.c_lin_vel/self.action_max[0])*np.cos(orientation_to_goal) + 5*((distance_to_goal - self.distance_to_goal_m1) <= 0) - 6
-        K = 1/(2*self.action_max[1]) * max(abs(2*self.c_ang_vel), abs(self.c_ang_vel - self.b_ang_vel))
-        r_ang = -2*K*(K>0.5)
-        s_st_aux = sensor_state[sensor_state>-1]
-        r_danger = (60*max(s_st_aux.min()-0.35, 0) - 5)*(s_st_aux.min()<0.4) if s_st_aux.shape[0] > 0 else 0
-        reward = self.rew_weights[0]*(r_target + r_ang + r_danger)
+        # r_target = (self.c_lin_vel/self.action_max[0])*np.cos(orientation_to_goal) + 5*((distance_to_goal - self.distance_to_goal_m1) <= 0) - 6
+
+
+        # K = 1/(2*self.action_max[1]) * max(abs(2*self.c_ang_vel), abs(self.c_ang_vel - self.b_ang_vel))
+        # r_ang = -2*K*(K>0.5)
+        # s_st_aux = sensor_state[sensor_state>-1]
+        # r_danger = (60*max(s_st_aux.min()-0.35, 0) - 5)*(s_st_aux.min()<0.4) if s_st_aux.shape[0] > 0 else 0
+
+        r_target = - (distance_to_goal - self.distance_to_goal_m1)
+        r_orientation = - (orientation_to_goal - self.orientation_to_goal_m1)
+        reward = self.rew_weights[0]*(r_target + r_orientation - (pf_f/35)**2)
         # distance_to_goal = get_distance(agent_position[:-1], goal[:-1])
         self.distance_to_goal_m1 = distance_to_goal
+        self.orientation_to_goal_m1 = orientation_to_goal
         # collision check
         if self.collision_check(sensor_state, self.margin):
             reward = -1*self.rew_weights[1]
             done = True
         # goal achievement
-        if get_distance(self.agent.get_position()[:-1], self.goal_position[:-1]) < self.margin_to_goal:
-            print("GOAL!!")
+        if distance_to_goal < self.margin_to_goal:
             reward = self.rew_weights[2]
             done = True
         return reward, done
@@ -184,10 +197,11 @@ class PioneerEnv(object):
         self.pr.stop()
         self.pr.shutdown()
 
-    def model_update(self, method="DDPG"):
+    def model_update(self, method="DDPG", pretraining_loop=False):
 
         if method=="DDPG": self.agent.trainer.update()
         elif method=="IL": loss = self.agent.trainer.IL_update(); return loss
+        elif method=="CoL": loss = self.agent.trainer.CoL_update(pretraining_loop) 
         else: raise NotImplementedError()
 
     def normalize_states(self, sensor_state, distance_to_goal, orientation_to_goal):

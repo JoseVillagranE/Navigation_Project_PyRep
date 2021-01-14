@@ -21,6 +21,7 @@ def argparser():
     parser.add_argument('--iterations', help='caca', default=10000, type=int)
     parser.add_argument('--load_path', help = "load a path that is already calculate", default=True, type=bool)
     parser.add_argument('--type_of_planning', help="Neural Network or PID", default='PID', type=str)
+    parser.add_argument('--type_replay_buffer', help="Type of sample from replay buffer: random or agent_expert", default='random', type=str)
     return parser.parse_args()
 
 def main(args):
@@ -54,15 +55,21 @@ def main(args):
 
 def main_2(args):
 
-    # get experience w/ PID
-    env = PioneerEnv(_load_path=args.load_path, type_of_planning=args.type_of_planning)
+    env = PioneerEnv(_load_path=args.load_path,
+                     type_of_planning=args.type_of_planning,
+                     type_replay_buffer=args.type_replay_buffer)
     state, sensor_state = env.reset()
     done = False
     total_reward_episode = 0
     linear_max_action = ang_max_action = 0
     linear_min_action = ang_min_action = 500
+
+    pf_f_list = []
+    pf_or_list = []
+
+    # get experience w/ PID
     while not done:
-        action, action_b_rm = env.agent.predict(state, sensor_state, 0)
+        action, action_b_rm, pf_f, pf_or = env.agent.predict(state, sensor_state, 0)
         next_state, reward, _, done, sensor_state = env.step(action)
         if action_b_rm[0] > linear_max_action: linear_max_action = action_b_rm[0]
         if action_b_rm[1] > ang_max_action: ang_max_action = action_b_rm[1]
@@ -70,9 +77,11 @@ def main_2(args):
         if action_b_rm[1] < ang_min_action: ang_min_action = action_b_rm[1]
 
         experience_tuple = (state, action_b_rm, reward, next_state, done)
-        env.agent.trainer.replay_add_memory(experience_tuple)
+        env.agent.trainer.replay_memory.add_expert_memory(experience_tuple)
         state = next_state
         total_reward_episode += reward
+        pf_f_list.append(pf_f)
+        pf_or_list.append(pf_or)
         if done:
             break
         env.agent.update_local_goal()
@@ -80,29 +89,48 @@ def main_2(args):
     print(f"max_action: [{linear_max_action}, {ang_max_action}]")
     print(f"min_action: [{linear_min_action}, {ang_min_action}]")
 
+    # plt.figure(figsize=(12, 6))
+    # plt.subplot(1,2,1)
+    # plt.plot(pf_f_list)
+    # plt.xlabel("timestep", fontsize=12)
+    # plt.ylabel("Reactive Force", fontsize=12)
+    # plt.subplot(1,2,2)
+    # plt.plot(pf_or_list)
+    # plt.xlabel("timestep", fontsize=12)
+    # plt.ylabel("Angle correction [Rad]", fontsize=12)
+    # plt.savefig("PF_graphs.png")
+    # plt.show()
+
+    # RL training
     env.agent.set_type_of_planning("nn")
     env.agent.trainer.set_max_min_action(np.array([linear_max_action, ang_max_action]),
                                         np.array([linear_min_action, ang_min_action]))
     env.set_margin(0.15)
-    for k in range(50):
+
+    # expert training
+    for j in range(10000):
+        env.model_update("CoL", pretraining_loop=True)
+        # loss_mean += loss
+    # loss_mean /= 100
+    # print(f"iteration: {k} || IL_loss: {loss_mean}")
+
+    for k in range(1000):
         state, sensor_state = env.reset()
         loss_mean = 0
-        for j in range(50):
-            loss = env.model_update("IL")
-            loss_mean += loss
-        loss_mean /= 50
-        print(f"iteration: {k} || IL_loss: {loss_mean}")
         total_reward = 0
         done = False
         for i in range(1000):
-            action, _ = env.agent.predict(state, sensor_state, 0)
-            next_state, reward, _, done, sensor_state = env.step(action)
-            experience_tuple = (state, action, reward, next_state, done)
+            action, _, pf_f, _ = env.agent.predict(state, sensor_state, 0)
+            next_state, reward, _, done, sensor_state = env.step(action, pf_f)
+            experience_tuple = (state, action_b_rm, reward, next_state, done)
+            env.agent.trainer.replay_memory.add_agent_memory(experience_tuple)
             state = next_state
             total_reward += reward
             if done:
                 break
-        print(f"iteration: {i} || episode reward: {total_reward}")
+
+        env.model_update("CoL")
+        print(f"iteration: {k} || episode reward: {total_reward}")
 
     env.shutdown()
     print("Done!!")

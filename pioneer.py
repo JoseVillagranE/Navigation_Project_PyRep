@@ -17,7 +17,8 @@ class Pioneer(RobotComponent):
                  base_name: str = None,
                  type_of_planning: str = "PID",
                  use_pot_field: bool = True,
-                 Krep: float = .7):
+                 Krep: float = .7,
+                 type_replay_buffer: str = "random"):
 
         self.pio_joint = ["Pioneer_p3dx_leftMotor",
                           "Pioneer_p3dx_rightMotor"]
@@ -40,7 +41,7 @@ class Pioneer(RobotComponent):
 
         self.dist_controller = PID(kp=0.1, ki=0, kd=0.)
         self.ang_controller = PID(kp=0.3, ki=0., kd=10)
-        self.trainer = DDPG(len(self.proximity_sensors)+1+1)
+        self.trainer = DDPG(len(self.proximity_sensors)+1+1, type_replay_buffer=type_replay_buffer)
 
         self.use_pot_field = use_pot_field
         self.Krep = Krep
@@ -48,6 +49,8 @@ class Pioneer(RobotComponent):
     def predict(self, state, sensor_state, i):
         action = [0, 0]
         action_b_rm = [0, 0]
+        pf_f = 0
+        pf_or = 0
         if self.type_of_planning=="PID":
             # orientation w/r to world frame
             theta = self.get_orientation()[-1]# [x, y, z] -> z in radians -> [-pi pi]
@@ -56,7 +59,7 @@ class Pioneer(RobotComponent):
             orientation = np.arctan2(point_t[1], point_t[0])
             try:
                 if self.use_pot_field and sensor_state[sensor_state>-1].min() < 0.3:
-                    pf_or = self.get_or_pf(sensor_state, orientation)
+                    pf_or, pf_f = self.get_pf(sensor_state, orientation)
                     orientation -= pf_or
             except ValueError:
                 pass
@@ -65,7 +68,7 @@ class Pioneer(RobotComponent):
             action = self.trainer.get_action(state, i)
             wl, wr = self.robot_model(*action)
             action = np.array([wl, wr])
-        return action, action_b_rm
+        return action, action_b_rm, pf_f, pf_or
 
 
     def take_action(self, orientation, distance):
@@ -96,7 +99,7 @@ class Pioneer(RobotComponent):
                 self.draw_local_goal()
 
 
-    def get_or_pf(self, states, orientation):
+    def get_pf(self, states, orientation):
         gamma = 2*np.pi/states.shape[0]
         angles = np.linspace(0, 2*np.pi - gamma, states.shape[0])
         mask = states > -1
@@ -109,7 +112,8 @@ class Pioneer(RobotComponent):
         Px = -Xrep
         Py = -Yrep
         or_pf = np.arctan2(Py, Px)
-        return self.Krep*or_pf
+        pf_f = np.linalg.norm(Px + Py)
+        return self.Krep*or_pf, pf_f
 
 
     def load_path(self, path, debug=True):
