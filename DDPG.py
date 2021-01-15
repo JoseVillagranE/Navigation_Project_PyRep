@@ -17,7 +17,7 @@ class DDPG:
                  gamma=0.99,
                  tau=1e-2,
                  max_memory_size=100000,
-                 iteration_limit=500000,
+                 iteration_limit=5000,
                  type_replay_buffer="random"):
 
         self.num_states = state_dim
@@ -28,7 +28,7 @@ class DDPG:
         self.action_max = np.array(action_max)
         self.action_min = np.array(action_min)
         self.iteration_limit = iteration_limit
-        self.lambdas = [0.9, 0.05, 0.05]
+        self.lambdas = [1, 1, 1]
 
         # GPU
         self.device = "cuda:0" if torch.cuda.is_available() else 'cpu'
@@ -156,14 +156,14 @@ class DDPG:
         pred_actions = self.actor(states)
 
         # BC loss
-        L_BC = self.mse(pred_actions, actions).mean()
+        L_BC = self.mse(pred_actions, actions)
 
         # 1-step return Q-learning Loss
         R_1 = rewards + self.gamma*self.critic(next_states, self.actor(next_states).detach())
         L_Q1 = self.mse(R_1, self.critic(states, self.actor(states).detach())) # reduction -> mean
 
         # Actor Q_loss
-        L_A = -1*self.critic(states, self.actor(states)).mean()
+        L_A = -1*self.critic(states, self.actor(states)).detach().mean()
 
         L_col_actor = self.lambdas[0]*L_BC + self.lambdas[2]*L_A
         L_col_critic = self.lambdas[1]*L_Q1
@@ -193,6 +193,9 @@ class DDPG:
         self.action_max = action_max
         self.action_min = action_min
 
+    def set_lambdas(self, lambdas):
+        self.lambdas = lambdas
+
     @staticmethod
     def gen_random_noise(scale=1):
         k = np.random.normal(scale=scale, size=2)
@@ -201,7 +204,7 @@ class DDPG:
 
     @staticmethod
     def noise_decay(iteration_limit, i):
-        return 0.95*(1 - (i/iteration_limit)) + 0.05
+        return 0.1*(1 - (i/iteration_limit)) + 0.05
 
     @staticmethod
     def cat_experience_tuple(sa, se, aa, ae, ra, re, nsa, nse, da, de):

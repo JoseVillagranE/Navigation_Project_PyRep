@@ -178,8 +178,9 @@ class PioneerEnv(object):
         # r_danger = (60*max(s_st_aux.min()-0.35, 0) - 5)*(s_st_aux.min()<0.4) if s_st_aux.shape[0] > 0 else 0
 
         r_target = - (distance_to_goal - self.distance_to_goal_m1)
-        r_orientation = - (orientation_to_goal - self.orientation_to_goal_m1)
-        reward = self.rew_weights[0]*(r_target + r_orientation - (pf_f/35)**2)
+        r_vel = self.c_lin_vel/self.action_max[0]
+        # r_orientation = - (orientation_to_goal - self.orientation_to_goal_m1)
+        reward = self.rew_weights[0]*(r_target + r_vel - pf_f/20)
         # distance_to_goal = get_distance(agent_position[:-1], goal[:-1])
         self.distance_to_goal_m1 = distance_to_goal
         self.orientation_to_goal_m1 = orientation_to_goal
@@ -201,7 +202,7 @@ class PioneerEnv(object):
 
         if method=="DDPG": self.agent.trainer.update()
         elif method=="IL": loss = self.agent.trainer.IL_update(); return loss
-        elif method=="CoL": loss = self.agent.trainer.CoL_update(pretraining_loop) 
+        elif method=="CoL": loss = self.agent.trainer.CoL_update(pretraining_loop)
         else: raise NotImplementedError()
 
     def normalize_states(self, sensor_state, distance_to_goal, orientation_to_goal):

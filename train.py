@@ -106,34 +106,61 @@ def main_2(args):
     env.agent.trainer.set_max_min_action(np.array([linear_max_action, ang_max_action]),
                                         np.array([linear_min_action, ang_min_action]))
     env.set_margin(0.15)
+    env.agent.trainer.set_lambdas([0.25, 0.75, 1])
 
     # expert training
     for j in range(10000):
-        env.model_update("CoL", pretraining_loop=True)
+        _ = env.model_update("IL", pretraining_loop=True)
         # loss_mean += loss
     # loss_mean /= 100
     # print(f"iteration: {k} || IL_loss: {loss_mean}")
 
-    for k in range(1000):
-        state, sensor_state = env.reset()
-        loss_mean = 0
-        total_reward = 0
-        done = False
-        for i in range(1000):
-            action, _, pf_f, _ = env.agent.predict(state, sensor_state, 0)
-            next_state, reward, _, done, sensor_state = env.step(action, pf_f)
-            experience_tuple = (state, action_b_rm, reward, next_state, done)
-            env.agent.trainer.replay_memory.add_agent_memory(experience_tuple)
-            state = next_state
-            total_reward += reward
-            if done:
-                break
+    try:
+        total_reward_list = []
+        for k in range(1000):
+            state, sensor_state = env.reset()
+            loss_mean = 0
+            total_reward = 0
+            done = False
+            for i in range(5000):
+                action, _, pf_f, _ = env.agent.predict(state, sensor_state, i)
+                next_state, reward, _, done, sensor_state = env.step(action, pf_f)
+                experience_tuple = (state, action_b_rm, reward, next_state, done)
+                env.agent.trainer.replay_memory.add_agent_memory(experience_tuple)
+                state = next_state
+                total_reward += reward
+                if done:
+                    break
 
-        env.model_update("CoL")
-        print(f"iteration: {k} || episode reward: {total_reward}")
+            print(f"iteration: {k} || episode reward: {total_reward}")
+            total_reward_list.append(total_reward)
+            for _ in range(100):
+                env.model_update("CoL")
 
-    env.shutdown()
-    print("Done!!")
+    except KeyboardInterrupt:
+        pass
+    finally:
+
+        models_state_dicts = (env.agent.trainer.actor.state_dict(),
+                             env.agent.trainer.critic.state_dict(),
+                             env.agent.trainer.actor_target.state_dict(),
+                             env.agent.trainer.critic_target.state_dict())
+
+        optimizers_dicts = (env.agent.trainer.actor_optimizer.state_dict(),
+                            env.agent.trainer.critic_optimizer.state_dict())
+
+        save_dict = {
+                    "episode": k,
+                    "models_state_dict": models_state_dicts,
+                    "optimizer_dict": optimizers_dicts,
+                    "total_reward_list": total_reward_list
+                    }
+
+
+        filename = "1s_experiment_" + str(k) + ".pth.tar"
+        torch.save(save_dict, os.path.join("./weights", filename))
+        env.shutdown()
+        print("Done!!")
 
 if __name__ == "__main__":
 
