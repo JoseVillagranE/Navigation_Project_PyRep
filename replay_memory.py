@@ -26,7 +26,7 @@ class SequentialDequeMemory(ExperienceReplayMemory):
 
     def get_random_batch_for_replay(self, batch_size=64):
         batch = random.sample(self.memory, batch_size)
-        states = np.zeros((batch_size, 20))
+        states = np.zeros((batch_size, 18))
         actions = np.zeros((batch_size, 2))
         rewards = np.zeros((batch_size, 1))
         next_states = np.zeros_like(states)
@@ -61,8 +61,10 @@ class AE_ReplayB(ExperienceReplayMemory):
 
         if type_of_memory=="expert":
             batch = random.sample(self.expert_memory, batch_size)
-        else:
+        elif type_of_memory=="agent":
             batch = random.sample(self.agent_memory, batch_size)
+        else:
+            raise NotImplementedError()
 
         states = np.zeros((batch_size, 18))
         actions = np.zeros((batch_size, 2))

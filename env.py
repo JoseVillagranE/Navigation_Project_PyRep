@@ -18,7 +18,9 @@ from utils import get_distance, world_to_robot_frame
 
 class PioneerEnv(object):
 
-    def __init__(self, start=[100, 100],
+    def __init__(self,
+                 escene_name='proximity_sensor.ttt',
+                 start=[100, 100],
                  goal=[180, 500],
                  rand_area=[100, 450],
                  path_resolution=5.0,
@@ -33,8 +35,7 @@ class PioneerEnv(object):
                  max_laser_range = 1.0,
                  headless=False):
 
-        SCENE_FILE = join(dirname(abspath(__file__)),
-                          'proximity_sensor.ttt')
+        SCENE_FILE = join(dirname(abspath(__file__)),escene_name)
 
 
         self.pr = PyRep()
@@ -67,10 +68,18 @@ class PioneerEnv(object):
         scene_image = self.vision_map.capture_rgb()*255
         scene_image = np.flipud(scene_image)
 
-        self.rew_weights = [1, 200, 100]
+        self.rew_weights = [1, 10000, 5000]
 
         self.start_position = Dummy("Start").get_position()
         self.goal_position = Dummy("Goal").get_position() # [x, y, z]
+
+        self.local_goal_aux = Dummy("Local_goal_aux")
+
+        self.local_goal_aux_pos_list = [[-3.125, 2.175, 0],
+                                        [2.9, 3.575, 0],
+                                        self.goal_position,
+                                        self.goal_position]
+        self.ind_local_goal_aux = 0
 
         self.max_distance = get_distance([-7.5, -4.1, 0.], self.goal_position)
         self.distance_to_goal_m1 = get_distance(self.start_position, self.goal_position)
@@ -169,18 +178,13 @@ class PioneerEnv(object):
 
     def _get_reward(self, sensor_state, distance_to_goal, orientation_to_goal, pf_f=0):
         done = False
-        # r_target = (self.c_lin_vel/self.action_max[0])*np.cos(orientation_to_goal) + 5*((distance_to_goal - self.distance_to_goal_m1) <= 0) - 6
 
-
-        # K = 1/(2*self.action_max[1]) * max(abs(2*self.c_ang_vel), abs(self.c_ang_vel - self.b_ang_vel))
-        # r_ang = -2*K*(K>0.5)
-        # s_st_aux = sensor_state[sensor_state>-1]
-        # r_danger = (60*max(s_st_aux.min()-0.35, 0) - 5)*(s_st_aux.min()<0.4) if s_st_aux.shape[0] > 0 else 0
+        r_local_goal = self.update_local_goal_aux()
 
         r_target = - (distance_to_goal - self.distance_to_goal_m1)
         r_vel = self.c_lin_vel/self.action_max[0]
         # r_orientation = - (orientation_to_goal - self.orientation_to_goal_m1)
-        reward = self.rew_weights[0]*(r_target + r_vel - pf_f/20)
+        reward = self.rew_weights[0]*(r_local_goal + r_vel)# - pf_f/20)
         # distance_to_goal = get_distance(agent_position[:-1], goal[:-1])
         self.distance_to_goal_m1 = distance_to_goal
         self.orientation_to_goal_m1 = orientation_to_goal
@@ -220,6 +224,17 @@ class PioneerEnv(object):
 
     def set_margin(self, margin):
         self.margin = margin
+
+    # def set_start_goal_position(self, start_pos, goal_pos):
+
+    def update_local_goal_aux(self):
+        pos = self.agent.get_position()[:-1]
+        distance = get_distance(pos, self.local_goal_aux.get_position()[:-1])
+        if distance < 0.5:
+            self.local_goal_aux.set_position(self.local_goal_aux_pos_list[self.ind_local_goal_aux])
+            self.ind_local_goal_aux += 1
+        return -1*distance**2
+
 
     @staticmethod
     def collision_check(observations, margin):

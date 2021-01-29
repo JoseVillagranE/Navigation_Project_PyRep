@@ -17,7 +17,7 @@ class DDPG:
                  gamma=0.99,
                  tau=1e-2,
                  max_memory_size=100000,
-                 iteration_limit=5000,
+                 iteration_limit=1000,
                  type_replay_buffer="random"):
 
         self.num_states = state_dim
@@ -64,7 +64,7 @@ class DDPG:
         if state.ndim <  2:
             state = state.unsqueeze(0)
         action = self.actor(state)
-        action = action.detach().cpu().numpy()[0]# + self.gen_random_noise(self.noise_decay(self.iteration_limit, i))
+        action = action.detach().cpu().numpy()[0] + self.gen_random_noise(self.noise_decay(self.iteration_limit, i))
         action = np.clip(action, -1, 1)
         action = (self.action_max - self.action_min)*action/2.0 + (self.action_max + self.action_min)/2.0
         return action
@@ -159,14 +159,14 @@ class DDPG:
         L_BC = self.mse(pred_actions, actions)
 
         # 1-step return Q-learning Loss
-        R_1 = rewards + self.gamma*self.critic(next_states, self.actor(next_states).detach())
+        R_1 = rewards + self.gamma*self.critic_target(next_states, self.actor_target(next_states).detach())
         L_Q1 = self.mse(R_1, self.critic(states, self.actor(states).detach())) # reduction -> mean
 
         # Actor Q_loss
         L_A = -1*self.critic(states, self.actor(states)).detach().mean()
 
-        L_col_actor = self.lambdas[0]*L_BC + self.lambdas[2]*L_A
-        L_col_critic = self.lambdas[1]*L_Q1
+        L_col_actor = self.lambdas[0]*L_BC + self.lambdas[1]*L_A
+        L_col_critic = self.lambdas[2]*L_Q1
 
         self.actor_optimizer.zero_grad()
         L_col_actor.backward()
@@ -180,9 +180,6 @@ class DDPG:
 
         for target_param, param in zip(self.critic_target.parameters(), self.critic.parameters()):
             target_param.data.copy_(param.data*self.tau + target_param.data*(1.0 - self.tau))
-
-
-
 
 
 
@@ -204,7 +201,7 @@ class DDPG:
 
     @staticmethod
     def noise_decay(iteration_limit, i):
-        return 0.1*(1 - (i/iteration_limit)) + 0.05
+        return 0.1*(1 - (i/iteration_limit))
 
     @staticmethod
     def cat_experience_tuple(sa, se, aa, ae, ra, re, nsa, nse, da, de):

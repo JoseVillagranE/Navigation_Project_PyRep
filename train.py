@@ -22,12 +22,15 @@ def argparser():
     parser.add_argument('--load_path', help = "load a path that is already calculate", default=True, type=bool)
     parser.add_argument('--type_of_planning', help="Neural Network or PID", default='PID', type=str)
     parser.add_argument('--type_replay_buffer', help="Type of sample from replay buffer: random or agent_expert", default='random', type=str)
+    parser.add_argument('--headless', help='mode headless simulation', default=False, type=bool)
     return parser.parse_args()
 
 def main(args):
     pos_margin = 0.05
     orientation_margin = 0.01
-    env = PioneerEnv(_load_path=args.load_path, type_of_planning=args.type_of_planning)
+    env = PioneerEnv(_load_path=args.load_path,
+                     type_of_planning=args.type_of_planning,
+                     headless=args.headless)
     for e in range(args.episodes):
         print('Starting episode %d' % e)
         total_reward_episode = 0
@@ -70,7 +73,7 @@ def main_2(args):
     # get experience w/ PID
     while not done:
         action, action_b_rm, pf_f, pf_or = env.agent.predict(state, sensor_state, 0)
-        next_state, reward, _, done, sensor_state = env.step(action)
+        next_state, reward, _, done, sensor_state = env.step(action, pf_f)
         if action_b_rm[0] > linear_max_action: linear_max_action = action_b_rm[0]
         if action_b_rm[1] > ang_max_action: ang_max_action = action_b_rm[1]
         if action_b_rm[0] < linear_min_action: linear_min_action = action_b_rm[0]
@@ -105,16 +108,12 @@ def main_2(args):
     env.agent.set_type_of_planning("nn")
     env.agent.trainer.set_max_min_action(np.array([linear_max_action, ang_max_action]),
                                         np.array([linear_min_action, ang_min_action]))
-    env.set_margin(0.15)
-    env.agent.trainer.set_lambdas([0.25, 0.75, 1])
+    env.set_margin(0.1)
 
     # expert training
-    for j in range(10000):
-        _ = env.model_update("IL", pretraining_loop=True)
-        # loss_mean += loss
-    # loss_mean /= 100
-    # print(f"iteration: {k} || IL_loss: {loss_mean}")
-
+    for j in range(5000):
+        _ = env.model_update("CoL", pretraining_loop=True)
+    env.agent.trainer.set_lambdas([1, 1, 1])
     try:
         total_reward_list = []
         for k in range(1000):
@@ -123,7 +122,7 @@ def main_2(args):
             total_reward = 0
             done = False
             for i in range(5000):
-                action, _, pf_f, _ = env.agent.predict(state, sensor_state, i)
+                action, action_b_rm, pf_f, _ = env.agent.predict(state, sensor_state, k)
                 next_state, reward, _, done, sensor_state = env.step(action, pf_f)
                 experience_tuple = (state, action_b_rm, reward, next_state, done)
                 env.agent.trainer.replay_memory.add_agent_memory(experience_tuple)
@@ -134,7 +133,7 @@ def main_2(args):
 
             print(f"iteration: {k} || episode reward: {total_reward}")
             total_reward_list.append(total_reward)
-            for _ in range(100):
+            for _ in range(50):
                 env.model_update("CoL")
 
     except KeyboardInterrupt:
@@ -161,6 +160,44 @@ def main_2(args):
         torch.save(save_dict, os.path.join("./weights", filename))
         env.shutdown()
         print("Done!!")
+
+
+def dojo_training(args):
+
+    env = PioneerEnv(scene_image="dojo_training.ttt",
+                     _load_path=args.load_path,
+                     type_of_planning=args.type_of_planning,
+                     type_replay_buffer=args.type_replay_buffer)
+
+    for task in range(10):
+        state, sensor_state = env.reset()
+        done = False
+        total_reward_episode = 0
+        linear_max_action = ang_max_action = 0
+        linear_min_action = ang_min_action = 500
+
+        pf_f_list = []
+        pf_or_list = []
+
+        # get experience w/ PID
+        while not done:
+            action, action_b_rm, pf_f, pf_or = env.agent.predict(state, sensor_state, 0)
+            next_state, reward, _, done, sensor_state = env.step(action, pf_f)
+            if action_b_rm[0] > linear_max_action: linear_max_action = action_b_rm[0]
+            if action_b_rm[1] > ang_max_action: ang_max_action = action_b_rm[1]
+            if action_b_rm[0] < linear_min_action: linear_min_action = action_b_rm[0]
+            if action_b_rm[1] < ang_min_action: ang_min_action = action_b_rm[1]
+
+            experience_tuple = (state, action_b_rm, reward, next_state, done)
+            env.agent.trainer.replay_memory.add_expert_memory(experience_tuple)
+            state = next_state
+            total_reward_episode += reward
+            pf_f_list.append(pf_f)
+            pf_or_list.append(pf_or)
+            if done:
+                break
+            env.agent.update_local_goal()
+
 
 if __name__ == "__main__":
 
