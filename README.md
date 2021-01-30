@@ -8,9 +8,9 @@ The objective of the project is to implement a first project in the CoppeliaSim[
 
 The simulation environment is built in coppeliaSim. This is a maze where the agent must navigate to get out of it. Some pictures are shown below:
 
-![alt text](https://github.com/JoseVillagranE/Navigation_Project_PyRep/master/images/lab.png)
-![alt text](https://github.com/JoseVillagranE/Navigation_Project_PyRep/master/images/lab_over.png)
-![alt text](https://github.com/JoseVillagranE/Navigation_Project_PyRep/master/images/pioneer.png)
+![alt text](https://github.com/JoseVillagranE/Navigation_Project_PyRep/blob/master/images/lab.png)
+![alt text](https://github.com/JoseVillagranE/Navigation_Project_PyRep/blob/master/images/lab_over.png)
+![alt text](https://github.com/JoseVillagranE/Navigation_Project_PyRep/blob/master/images/pioneer.png)
 
 ### APPROACH
 
@@ -20,13 +20,13 @@ As a first approach to the maze solver, rrt is used as the planning algorithm, P
 
 As a first result, an image are shown below of how rrt solves the proposed maze:
 
-![alt text](https://github.com/JoseVillagranE/Navigation_Project_PyRep/master/images/rrt_planning_map.png)
+![alt text](https://github.com/JoseVillagranE/Navigation_Project_PyRep/blob/master/images/rrt_planning_map.png)
 
 A first problem that arises with the planning of the robot consists of the proximity of the different points to the walls and that they are potential collision points. So, we must implement some correction to these points and that is the reason to use the potential field.
 
 The intervention of the reactive field is shown below:
 
-![alt text](https://github.com/JoseVillagranE/Navigation_Project_PyRep/master/images/PF_graphs.png)
+![alt text](https://github.com/JoseVillagranE/Navigation_Project_PyRep/blob/master/images/PF_graphs.png)
 
 If you pay attention to the maze and the passage of time, you can recognize that the highest peak on the graph coincides with the potential collision point, so the orientation of the potential field is used to correct the error.
 
